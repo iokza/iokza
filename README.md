@@ -59,13 +59,13 @@ I'm Mathéo, I'm 17 and I'm from France 🇫🇷<br><br>
 
 ###
 
-<h3 align="left">🔥   My Stats :</h3>
+<!-- <h3 align="left">🔥   My Stats :</h3> -->
 
 ###
 
-<div align="center">
+<!-- <div align="center">
   <img align="left" src="https://github-readme-stats.vercel.app/api/top-langs?username=iokza&show_icons=true&locale=en&layout=compact" alt="iokza" />
   <p>&nbsp;<img align="center" src="https://github-readme-stats.vercel.app/api?username=iokza&show_icons=true&locale=en" alt="iokza" /></p>
-</div>
+</div> -->
 
 ###
