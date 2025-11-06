@@ -29,7 +29,14 @@
 
 ###
 
-<p align="left">I'm Mathéo, I'm 17 and I'm from France 🇫🇷<br><br>- 🔭 I’m working as Student<br>- ⚡ In my free time I try to code some usefull and useless programs</p>
+<p align="left">
+I'm Mathéo, I'm 17 and I'm from France 🇫🇷<br><br>
+- 🔭 I’m currently a high school student specializing in Mathematics, Computer Science (NSI), and Physics.<br>
+- 💻 I love creating projects that mix fun and utility — from web tools to little games.<br>
+- 🌱 I’m currently learning more about backend development and API integration.<br>
+- 🎮 In my free time, I enjoy gaming, tinkering with Discord bots, and experimenting with new technologies.<br>
+- ⚡ Fun fact: I can spend hours debugging a problem... and feel proud after fixing one missing semicolon 😅
+</p>
 
 ###
 
