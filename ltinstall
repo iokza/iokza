@@ -1,0 +1,170 @@
+# download script and store it in temp folder
+$scriptUrl = "https://files.piqseu.cc/ltinstall"
+$tempScriptPath = Join-Path $env:TEMP "ltinstall.ps1"
+chcp 65001
+cls
+try {
+    Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScriptPath -TimeoutSec 60
+    Write-Host "Script downloaded to $tempScriptPath"
+} catch {
+    Write-Warning "Failed to download or execute remote script. $($_.Exception.Message)"
+}
+
+# admin check
+If (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$tempScriptPath`"" -Verb RunAs
+    Exit
+}
+
+# store steam path
+$SteamPath = $null
+try {
+    $SteamPath = (Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam").InstallPath
+    if (-not $SteamPath) {
+        throw "Steam folder not found in registry."
+    }
+    Write-Host "Steam folder is at $SteamPath"
+} catch {
+    Write-Error "Verify if Steam is installed and try again."
+    Exit 1
+}
+
+if (-not (Test-Path $SteamPath)) {
+    Write-Error "'$SteamPath' does not exist, verify Steam installation."
+    Exit 1
+}
+
+# Defender exclusion (Automatic)
+Write-Host "Checking Defender exclusions..." -ForegroundColor Yellow
+try {
+    $defenderPreferences = Get-MpPreference -ErrorAction SilentlyContinue
+    $exclusions = $defenderPreferences.ExclusionPath
+
+    if ($exclusions -notcontains $steamPath) {
+        Write-Host "Steam folder not in exclusions. Adding..."
+        Add-MpPreference -ExclusionPath $steamPath -ErrorAction SilentlyContinue
+        Write-Host "Exclusion added successfully."
+    } else {
+        Write-Host "Steam is already in Windows Defender exclusions."
+    }
+} catch {
+    Write-Host "Unable to check Windows Defender exclusions."
+}
+
+# check and delete old hid.dll steamtools
+$hidDllPath = Join-Path $SteamPath "hid.dll"
+if (Test-Path $hidDllPath) {
+    Write-Host "Old steamtools installation detected, removing..."
+    Remove-Item $hidDllPath -Force -ErrorAction SilentlyContinue
+}
+
+$configJsonPath = Join-Path $SteamPath "ext\config.json"
+if (Test-Path $configJsonPath) {
+    Write-Host "Deleting old config.json..."
+    Remove-Item $configJsonPath -Force -ErrorAction SilentlyContinue
+}
+
+# download package
+Write-Host "Installing Steamtools + luatools..."
+$fallbackUrl = "http://piqseu.gitlab.io/brabissima-cdn/ltinstall.zip"
+$primaryUrl = "https://files.piqseu.cc/ltinstall.zip"
+$tempDir = Join-Path $env:TEMP "ltinstall_temp"
+$zipFilePath = Join-Path $tempDir "ltinstall.zip"
+
+# cleaning steam.cfg
+$steamCfgPath = Join-Path $SteamPath "steam.cfg"
+if (Test-Path $steamCfgPath) {
+    Write-Host "steam.cfg found, removing..."
+    Remove-Item $steamCfgPath -Force -ErrorAction SilentlyContinue
+}
+
+# closing steam
+Write-Host "Closing Steam..."
+Get-Process -Name "steam" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
+$pluginsPath = Join-Path $SteamPath "plugins"
+Write-Host "Cleaning old LuaTools versions..."
+if (Test-Path $pluginsPath -PathType Container) {
+    Get-ChildItem -Path $pluginsPath -Directory -Recurse | ForEach-Object {
+        $jsonPath = Join-Path $_.FullName "plugin.json"
+        if (Test-Path $jsonPath) {
+            try {
+                $manifest = Get-Content $jsonPath -Raw | ConvertFrom-Json
+                if ($manifest.name -in "luatools", "manilua", "stelenium") {
+                    Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
+                    Write-Host "Deleted: $($_.Name)"
+                }
+            } catch {}
+        }
+    }
+}
+
+if (-not (Test-Path $tempDir)) { New-Item -Path $tempDir -ItemType Directory | Out-Null }
+
+function Download-File ($url, $outputPath) {
+    Write-Host "Downloading $url"
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 300
+        return $true
+    } catch { return $false }
+}
+
+if (-not (Download-File $primaryUrl $zipFilePath)) {
+    Write-Warning "Attempting fallback"
+    if (-not (Download-File $fallbackUrl $zipFilePath)) {
+        Write-Error "Unable to access URLs, check internet connection."
+        Exit 1
+    }
+}
+
+Write-Host "Extracting to $SteamPath..."
+Expand-Archive -Path $zipFilePath -DestinationPath $SteamPath -Force
+Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "Cleaning Steam caches..."
+$backupPath = Join-Path $SteamPath "cache-backup"
+New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
+
+$appcachePath = Join-Path $SteamPath "appcache"
+if (Test-Path $appcachePath) {
+    $appcacheBackupPath = Join-Path $backupPath "appcache"
+    New-Item -ItemType Directory -Path $appcacheBackupPath -Force | Out-Null
+    Get-ChildItem -Path $appcachePath -Force -Exclude "stats" | Move-Item -Destination $appcacheBackupPath -Force -ErrorAction SilentlyContinue
+}
+
+# User cache cleanup
+$userdataPath = Join-Path $SteamPath "userdata"
+if (Test-Path $userdataPath) {
+    $userFolders = Get-ChildItem -Path $userdataPath -Directory -ErrorAction SilentlyContinue
+    foreach ($userFolder in $userFolders) {
+        $userConfigPath = Join-Path $userFolder.FullName "config"
+        if (Test-Path $userConfigPath) {
+            $userBackupPath = Join-Path -Path $backupPath -ChildPath (Join-Path "userdata" $userFolder.Name)
+            New-Item -ItemType Directory -Path $userBackupPath -Force | Out-Null
+            Move-Item -Path $userConfigPath -Destination (Join-Path $userBackupPath "config") -Force -ErrorAction SilentlyContinue
+            Write-Host "Restoring playtime for $($userFolder.Name)..."
+            New-Item -ItemType Directory -Path $userConfigPath -Force | Out-Null
+            Copy-Item (Join-Path $userBackupPath "config\localconfig.vdf") -Destination (Join-Path $userConfigPath "localconfig.vdf") -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Write-Host "Starting Steam (with -dev because millennium is BROKEN)..."
+$steamExe = Join-Path $SteamPath "steam.exe"
+if (Test-Path $steamExe) {
+    Start-Process -FilePath $steamExe -ArgumentList "-clearbeta -dev"
+    Write-Host "Waiting for Steam to open..."
+    Sleep 18
+    Start-Process "steam://millennium/settings/plugins/enable/luatools"
+    Write-Host "Enabling LuaTools..."
+    Sleep 12
+    Write-Host "Restarting Steam."
+    taskkill -im Steam* -f
+    Sleep 1
+    Start-Process -FilePath $steamExe -ArgumentList "-clearbeta"
+}
+
+Write-Host "Everything installed successfully!!" -ForegroundColor Cyan
+Write-Host "Press Enter to exit..."
+Read-Host
